@@ -5,7 +5,7 @@ import base64
 from datetime import datetime, timedelta
 
 # Sample data
-df = pd.read_csv("https://raw.githubusercontent.com/gwmonitoring/main/cgwt.csv")
+df = pd.read_csv("https://raw.githubusercontent.com/gwmonitoring/main/cgwt_nnhn.csv")
 
 # Sidebar (왼쪽 프레임)
 st.sidebar.title("위치 리스트")
