@@ -1,87 +1,98 @@
-import pandas as pd
-import numpy as np
-import plotly.express as px
 import streamlit as st
-from PIL import Image
-import datetime
+import pandas as pd
+import plotly.express as px
 import base64
+from datetime import datetime, timedelta
 
-st.set_page_config(
-    page_title="Groundwater Monitoring",
-    page_icon="✅",
-    layout="wide"
-)
+# Sample data
+df = pd.read_csv("https://raw.githubusercontent.com/gwmonitoring/main/cgwt.csv")
 
-# Read data from a CSV file
-dataset_url = "https://raw.githubusercontent.com/cgwatertech/PySimpleGUI/master/cgwt.csv"
-@st.experimental_memo
-def get_data() -> pd.DataFrame:
-    return pd.read_csv(dataset_url)
+# Sidebar (왼쪽 프레임)
+st.sidebar.title("위치 리스트")
 
-df = get_data()
+# 'Time'을 제외한 컬럼들을 선택 박스에 넣음
+selected_location = st.sidebar.selectbox("위치 선택", df.columns[1:])
 
-# Dashboard title
-st.title("영등포 양평의 지하수위 관측")
+# Time 열을 DateTime 객체로 변환
+df['Time'] = pd.to_datetime(df['Time'])
 
-# Top-level filters
-job_filter = st.selectbox("관측공의 위치 선택", pd.unique(df.columns), index=df.columns.get_loc('Test02'))
+# 시작 날짜와 끝 날짜 선택
+start_date = st.sidebar.date_input("시작 날짜 선택", min_value=df['Time'].min(), max_value=df['Time'].max(), value=df['Time'].max() - timedelta(days=7))
+# 시간 선택
+start_time = st.sidebar.selectbox("시작 시간 선택", options=pd.date_range("00:00:00", "23:00:00", freq="H").strftime("%H:%M:%S"), index=0)
 
-st.markdown("### 지하수위 그래프")
-df["Time"] = pd.to_datetime(df["Time"])
-fig1 = px.line(
-    x=df["Time"], y=df[job_filter], data_frame=df)
-fig1.update_xaxes(title_text="X 축 (mmm dd)")
-fig1.update_yaxes(title_text="Y 축 (m)")
-st.write(fig1)
+end_date = st.sidebar.date_input("끝 날짜 선택", min_value=df['Time'].min(), max_value=df['Time'].max(), value=df['Time'].max())
+# 시간 선택
+end_time = st.sidebar.selectbox("끝 시간 선택", options=pd.date_range("00:00:00", "23:00:00", freq="H").strftime("%H:%M:%S"), index=len(pd.date_range("00:00:00", "23:00:00", freq="H")) - 1)
 
-# Date and time filtering
-start_date = st.date_input('Enter start date', value=datetime.datetime(2023, 9, 26))
-end_date = st.date_input('Enter end date', value=datetime.datetime(2023, 10, 10))
-start_time = st.time_input('Enter start time', datetime.time(8, 45))
-end_time = st.time_input('Enter end time', datetime.time(8, 46))
+# datetime 객체로 변환
+start_datetime = datetime.combine(start_date, datetime.strptime(start_time, "%H:%M:%S").time())
+end_datetime = datetime.combine(end_date, datetime.strptime(end_time, "%H:%M:%S").time())
 
-# Define the desired hour using a slider
-custom_hour = st.slider("원하는 시간을 선택하세요 (24시간 형식)", 1, 24, 15)
+# 선택하는 시간 선택
+selected_hour = st.sidebar.selectbox("선택하는 시간", range(25))
 
-# Filter data based on selected job and date/time range
-filtered_df = df[['Time', job_filter]]
-filtered_df["Time"] = pd.to_datetime(filtered_df["Time"])
+# 슬라이더로 범위 크기 조절
+rng_cmn = st.sidebar.slider("범위 크기", min_value=1, max_value=20, value=5, step=1)
 
-# Find the closest timestamp to the custom hour for each selected date
-filtered_df['CustomHour'] = filtered_df['Time'].apply(lambda x: x.replace(hour=custom_hour, minute=0, second=0, microsecond=0))
-filtered_df = filtered_df[(filtered_df['Time'] - filtered_df['CustomHour']).abs() == (filtered_df['Time'] - filtered_df['CustomHour']).abs().min()]
+# 시작 날짜와 끝 날짜 사이의 데이터 필터링 및 시간 필터링
+if selected_hour == 24:
+    filtered_data = df[(df['Time'] >= start_datetime) & (df['Time'] <= end_datetime)]
+else:
+    filtered_data = df[(df['Time'] >= start_datetime) & (df['Time'] <= end_datetime) & (df['Time'].dt.hour == selected_hour)]
 
-# Define your custom y-axis range here
-custom_y_range = st.slider("Y-축 범위 조절 (cm)", min_value=-200, max_value=0, value=(-150, -90), step=1)  # Use a step of 10
+# 최신 자료가 먼저 표시되도록 정렬
+filtered_data = filtered_data.sort_values(by='Time', ascending=False)
 
-# Convert the slider values to a scale of -20.0 to 0.0
-scaled_y_range = (custom_y_range[0] / 10.0, custom_y_range[1] / 10.0)
+# Main content (오른쪽 프레임)
+st.title("지하수위 관측 웹페이지")
 
-# fig2 - 특정 시간대의 지하수위 그래프
-fig2 = px.line(
-    x=filtered_df["Time"], y=filtered_df[job_filter])
-fig2.update_xaxes(title_text="X 축 (mmm dd)")
-fig2.update_yaxes(title_text="Y 축 (m)")
-fig2.update_yaxes(range=scaled_y_range)
+# 이미지 표시
+st.image("https://raw.githubusercontent.com/cgwatertech/gwmonitoring/main/Yujin_nonhyun.png", use_column_width=True)
 
-# Create a new window for fig2
-st.markdown("### 특정 시간대의 지하수위 그래프 (새 창)")
-st.plotly_chart(fig2)
+# Plot (오른쪽 아래 프레임)
+st.subheader(f"{selected_location} 위치의 지하수위 변화 ({start_datetime}부터 {end_datetime})")
 
-# Image upload
-uploaded_file = st.file_uploader("업로드할 이미지를 선택하세요.", type=["png", "jpg", "jpeg"])
+# 선택한 위치에 대한 평균 값을 계산
+avg_value = filtered_data[selected_location].mean()
+mx_value = filtered_data[selected_location].max()
+mn_value = filtered_data[selected_location].min()
+rng_value = (mx_value - mn_value) * rng_cmn
+rng_vale = rng_value / 2
 
-if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    st.image(image)
+# 평균 값으로 새로운 데이터 프레임을 만듦
+avg_df = pd.DataFrame({'Time': filtered_data['Time'], selected_location: avg_value})
+# 그래프 그리기
+fig = px.line(filtered_data, x="Time", y=selected_location, title=f"{selected_location} 위치의 지하수위 변화 ({start_datetime}부터 {end_datetime})")
 
-# Download filtered data as CSV
-if st.button("CSV로 다운로드"):
-    csv = filtered_df.to_csv(index=False)
-    b64 = base64.b64encode(csv.encode()).decode()
-    href = f'<a href="data:file/csv;base64,{b64}" download="filtered_data.csv">다운로드 CSV 파일</a>'
-    st.markdown(href, unsafe_allow_html=True)
+# y 축 리미트 설정
+fig.update_layout(yaxis=dict(range=[avg_value - rng_vale, avg_value + rng_vale]))
 
-st.markdown("### Detailed Data View")
-# Show detailed data for the selected job_filter
-st.dataframe(filtered_df)
+# x 축 tick 및 라벨 설정
+tickvals = filtered_data['Time'].iloc[::len(filtered_data) // 5]  # 5 ticks로 나누기
+ticktext = [val.strftime('%Y-%m-%d %H:%M') for val in tickvals]
+fig.update_layout(xaxis=dict(tickvals=tickvals, ticktext=ticktext))
+
+# 반응형으로 그래프 표시
+st.plotly_chart(fig, use_container_width=True)
+
+# 선택한 그래프의 시간과 데이터 다운로드 버튼
+selected_data = filtered_data[['Time', selected_location]]
+csv_selected_data = selected_data.to_csv(index=False)
+b64_selected_data = base64.b64encode(csv_selected_data.encode()).decode()
+st.markdown(f'<a href="data:file/csv;base64,{b64_selected_data}" download="selected_data.csv">선택 그래프 데이터 다운로드</a>', unsafe_allow_html=True)
+
+# 전체 데이터 다운로드 버튼
+csv_all_data = df.to_csv(index=False)
+b64_all_data = base64.b64encode(csv_all_data.encode()).decode()
+st.markdown(f'<a href="data:file/csv;base64,{b64_all_data}" download="all_data.csv">전체 자료 다운로드</a>', unsafe_allow_html=True)
+
+# 선택 결과를 새로운 창에서 보여주기
+selected_data_preview = filtered_data[['Time', selected_location]].copy()
+
+# 인덱스를 감춤
+selected_data_preview.set_index('Time', inplace=True)
+
+# 왼쪽 프레임에 데이터를 미리보는 창
+st.sidebar.subheader("선택된 자료 미리보기")
+st.sidebar.write(selected_data_preview.sort_index().head(15))
